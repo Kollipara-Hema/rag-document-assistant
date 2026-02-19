@@ -20,7 +20,7 @@ def get_embeddings() -> Any:
 
 def get_llm() -> Any:
     if LLM_PROVIDER == "ollama":
-        from langchain_community.chat_models import ChatOllama
+        from langchain_ollama import ChatOllama
         return ChatOllama(model="llama3.1", temperature=0)
 
     if LLM_PROVIDER == "openai":
