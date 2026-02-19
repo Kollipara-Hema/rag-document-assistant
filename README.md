@@ -137,14 +137,4 @@ For public deployment, switch to OpenAI or another hosted provider.
 -   Evaluation metrics (faithfulness, retrieval recall)
 -   Cloud-ready deployment pipeline
 
-------------------------------------------------------------------------
 
-## 🎯 Interview Talking Points
-
-This project demonstrates:
-
--   End-to-end RAG system design
--   Vector database implementation
--   LLM integration with grounding
--   Prompt engineering for citation enforcement
--   Modular architecture for production scalability
