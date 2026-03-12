@@ -13,5 +13,3 @@ __pycache__/
 
 # Vector DB persistence
 data/chroma_db/
-
-data/raw_docs/
