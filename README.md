@@ -1,13 +1,11 @@
 # Modular RAG Document Assistant
-## A Learning Lab for Retrieval Augmented Generation (RAG)
 
-This repository implements a modular Retrieval Augmented Generation (RAG) system designed for experimentation, learning, and demonstration of modern document question answering pipelines.
+An interactive learning project for building and experimenting with **Retrieval Augmented Generation (RAG)** pipelines.
 
-The project allows users to explore different document ingestion methods, chunking strategies, embedding models, retrieval methods, and language models through an interactive interface.
+This repository implements a **modular RAG architecture** where each stage of the pipeline can be configured independently. The system allows users to experiment with different document loaders, chunking strategies, embedding models, retrieval methods, and language models through an interactive **Streamlit interface**.
 
-The goal is to make RAG pipelines transparent, configurable, and educational so that anyone studying LLM systems can understand how each component affects performance.
+The project is designed as a **learning lab for modern LLM systems**, helping users understand how different RAG components influence retrieval quality and answer generation.
 
-The final interface is implemented using Streamlit, allowing users to interactively configure the pipeline and observe how answers are generated.
 
 ## Project Goals
 
@@ -23,25 +21,24 @@ Instead of providing a fixed pipeline, this project allows users to experiment w
 
 ## RAG Pipeline Overview
 
-Document Sources
-↓
-Document Loader
-↓
-Text Chunking
-↓
-Embedding Model
-↓
-Vector Database
-↓
-Retriever
-↓
-(optional) Reranker
-↓
-LLM Generator
-↓
-Final Answer with Citations
+# RAG Pipeline Architecture
 
-Each step of this pipeline is modular and configurable.
+The system follows a modular Retrieval Augmented Generation pipeline:
+
+Document Source
+      │
+      ▼
+Loader → Chunker → Embedder → Vector DB
+      │
+      ▼
+Retriever → Reranker → LLM Generator
+      │
+      ▼
+Final Answer + Sources
+
+
+Each component is implemented as a **separate module**, allowing easy experimentation and extension.
+
 
 ## Features
 Modular Architecture
@@ -55,34 +52,108 @@ Generation	OpenAI, Ollama
 Reranking	Optional
 Evaluation	Basic evaluation utilities
 
+## Current Implemented Features
+
+Document Loaders
+- Local file loader
+- Web page loader
+- GitHub repository loader
+- Upload loader
+
+Chunking Strategies
+- Fixed chunking
+- Recursive chunking
+- Sliding window chunking
+- Semantic chunking
+
+Embedding Models
+- Sentence Transformers
+- OpenAI embeddings
+
+Vector Database
+- Chroma
+
+Retrieval Methods
+- Dense retrieval
+- Sparse retrieval (BM25)
+- Hybrid retrieval
+
+Language Models
+- OpenAI
+- Ollama (local LLM)
+
+
 ## Repository Structure
 
-||_rag-document-assistant
-||_app/
+rag-document-assistant
+
+app/
    app.py
-||_data/
-   |_raw_docs/
-   |_chroma_db/
-   |_chroma_uploads/
-   |_benchmarks/
-||_examples/
-||_notebooks/
-||_src/
-   |_loaders/
-   |_chunkers/
-   |_embeddings/
-   |_vectordb/
-   |_retrievers/
-   |_generators/
-   |_rerankers/
-   |_evaluators/
-   |_utils/
-   |_config.py
-   |_registry.py
-   |_pipeline.py
-||_src_legacy/
-||_requirements.txt
-||_README.md
+   Streamlit interface for exploring the RAG pipeline
+
+data/
+   raw_docs/
+   chroma_db/
+   chroma_uploads/
+   benchmarks/
+
+examples/
+   sample inputs and configurations
+
+notebooks/
+   notebooks for experimentation and benchmarking
+
+src/
+
+   loaders/
+      local_loader.py
+      web_loader.py
+      github_loader.py
+      upload_loader.py
+
+   chunkers/
+      fixed_chunker.py
+      recursive_chunker.py
+      sliding_window_chunker.py
+      semantic_chunker.py
+
+   embeddings/
+      sentence_transformer_embedder.py
+      openai_embedder.py
+
+   vectordb/
+      chroma_store.py
+
+   retrievers/
+      dense_retriever.py
+      sparse_retriever.py
+      hybrid_retriever.py
+
+   generators/
+      openai_generator.py
+      ollama_generator.py
+
+   rerankers/
+      no_reranker.py
+
+   evaluators/
+      basic_eval.py
+
+   utils/
+      file_utils.py
+      metadata_utils.py
+      prompts.py
+
+   config.py
+   registry.py
+   pipeline.py
+
+src_legacy/
+   earlier prototype implementation kept for reference
+
+requirements.txt
+README.md
+
 
 ## Installation
 
@@ -105,11 +176,11 @@ pip install -r requirements.txt
 ## Running the Application
 
 Start the Streamlit interface:
-
+'''
 streamlit run app/app.py
+'''
 
-
-This launches the interactive interface where users can configure the pipeline and ask questions.
+The interface allows users to configure the RAG pipeline and run queries against ingested documents.
 
 ## Supported Document Sources
 
