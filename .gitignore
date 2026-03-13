@@ -1,15 +1,13 @@
-# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Virtual env
+.env
 .venv/
 
-# Mac
-.DS_Store
-
-# Secrets
-.env
-
-# Vector DB persistence
 data/chroma_db/
+data/chroma_uploads/
+
+*.log
+.DS_Store

@@ -1,81 +1,88 @@
+"""
+Streamlit interface for the modular RAG learning lab.
+
+This app lets users choose key pipeline components and see both
+the generated answer and the selected RAG pipeline.
+"""
+
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.append(str(ROOT))
+ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.append(str(ROOT_DIR))
 
 import streamlit as st
 
-from src.rag import answer_question
-from src.upload_ingest import build_upload_index
+from src.config import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, DEFAULT_TOP_K
+from src.pipeline import run_rag_pipeline
+from src.registry import LOADERS, CHUNKERS, EMBEDDERS, RETRIEVERS, GENERATORS
 
-st.set_page_config(page_title="RAG Document Assistant", layout="wide")
+st.set_page_config(page_title="RAG Learning Lab", layout="wide")
 
-st.title("LLM-Powered Document Assistant")
+st.title("RAG Learning Lab")
 st.markdown(
-    "Ask questions over your repository documents, uploaded documents, or both."
+    """
+This app demonstrates a modular Retrieval-Augmented Generation pipeline.
+
+You can choose pipeline components from the sidebar and see how the system
+loads documents, chunks them, embeds them, retrieves relevant context,
+and generates an answer.
+"""
 )
 
-# Sidebar
-st.sidebar.header("Settings")
-k = st.sidebar.slider("Top-K retrieved chunks", 3, 10, 5)
-st.sidebar.info("Model: llama3.1 (local via Ollama)")
+# Sidebar controls let the user configure the current RAG pipeline.
+st.sidebar.header("Pipeline Controls")
 
-mode_label = st.sidebar.radio(
-    "Choose document source",
-    ["Repository only", "Uploaded only", "Both"],
-    index=0,
+loader_name = st.sidebar.selectbox("Document Source", list(LOADERS.keys()))
+chunker_name = st.sidebar.selectbox("Chunking Strategy", list(CHUNKERS.keys()))
+embedder_name = st.sidebar.selectbox("Embedding Model", list(EMBEDDERS.keys()))
+retriever_name = st.sidebar.selectbox("Retriever", list(RETRIEVERS.keys()))
+generator_name = st.sidebar.selectbox("LLM Generator", list(GENERATORS.keys()))
+
+top_k = st.sidebar.slider("Top-K Retrieved Chunks", 1, 10, DEFAULT_TOP_K)
+chunk_size = st.sidebar.slider("Chunk Size", 300, 2000, DEFAULT_CHUNK_SIZE, step=100)
+chunk_overlap = st.sidebar.slider("Chunk Overlap", 0, 500, DEFAULT_CHUNK_OVERLAP, step=25)
+
+question = st.text_input(
+    "Ask a question about the indexed documents:",
+    value="What is retrieval-augmented generation?",
 )
 
-mode_map = {
-    "Repository only": "repository",
-    "Uploaded only": "uploaded",
-    "Both": "both",
-}
-mode = mode_map[mode_label]
+if st.button("Run Pipeline"):
+    with st.spinner("Running the selected RAG pipeline..."):
+        result = run_rag_pipeline(
+            question=question,
+            loader_name=loader_name,
+            chunker_name=chunker_name,
+            embedder_name=embedder_name,
+            retriever_name=retriever_name,
+            generator_name=generator_name,
+            top_k=top_k,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
 
-uploaded_files = st.sidebar.file_uploader(
-    "Upload documents",
-    type=["pdf", "html", "htm", "txt", "csv", "json", "docx", "rtf"],
-    accept_multiple_files=True,
-)
+    st.subheader("Answer")
+    st.write(result["answer"])
 
-if "uploads_ready" not in st.session_state:
-    st.session_state["uploads_ready"] = False
+    st.subheader("Pipeline Summary")
 
-if st.sidebar.button("Process uploaded documents"):
-    if uploaded_files:
-        with st.spinner("Indexing uploaded documents..."):
-            chunk_count = build_upload_index(uploaded_files)
-            st.session_state["uploads_ready"] = chunk_count > 0
+    # Text summary of the selected pipeline.
+    for key, value in result["pipeline_summary"].items():
+        st.write(f"**{key}:** {value}")
 
-        if chunk_count > 0:
-            st.sidebar.success(f"Uploaded documents indexed successfully. Chunks created: {chunk_count}")
-        else:
-            st.sidebar.warning("No supported content could be extracted from uploaded files.")
-    else:
-        st.sidebar.warning("Please upload at least one file first.")
+    # Visual flow of the selected pipeline.
+    pipeline_flow = " → ".join(result["pipeline_summary"].values())
+    st.info(f"Pipeline Flow: {pipeline_flow}")
 
-query = st.text_input(
-    "Ask a question:",
-    value="What is Poisson PCA and why is it used for count data?",
-)
+    st.subheader("Pipeline Statistics")
+    for key, value in result["stats"].items():
+        st.write(f"**{key}:** {value}")
 
-if st.button("Generate Answer"):
-    if mode in {"uploaded", "both"} and not st.session_state.get("uploads_ready", False):
-        st.warning("You selected uploaded documents, but no uploaded documents have been processed yet.")
-    else:
-        with st.spinner("Retrieving documents and generating answer..."):
-            result = answer_question(query, k=k, mode=mode)
+    st.subheader("Retrieved Chunks")
+    for index, doc in enumerate(result["retrieved_docs"], start=1):
+        source = doc.metadata.get("source", "unknown")
+        page = doc.metadata.get("page", "NA")
 
-        st.subheader("Answer")
-        st.write(result["answer"])
-
-        st.subheader("Sources")
-        if result["sources"]:
-            for src in result["sources"]:
-                st.write(
-                    f"• [{src['scope']}] {src['source']} — Page {src['page']} ({src['file_type']})"
-                )
-        else:
-            st.info("No sources retrieved.")
+        with st.expander(f"Chunk {index} | Source: {source} | Page: {page}"):
+            st.write(doc.page_content[:1500])
