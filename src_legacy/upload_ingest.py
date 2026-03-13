@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
 import os
+import shutil
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import List
 
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -11,32 +13,37 @@ from docx import Document as DocxDocument
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Chroma
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from .config import CHROMA_DIR, COLLECTION_NAME, CHUNK_OVERLAP, CHUNK_SIZE
+from .config import UPLOAD_CHROMA_DIR, UPLOAD_COLLECTION_NAME
+from .ingest import chunk_documents
 from .providers import get_embeddings
 
 
-SUPPORTED_EXTENSIONS = {".pdf", ".html", ".htm", ".txt", ".csv", ".json", ".docx", ".rtf"}
+def _save_uploaded_file(uploaded_file, tmp_dir: Path) -> Path:
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    file_path = tmp_dir / uploaded_file.name
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    return file_path
 
 
-def read_text_file(path: Path) -> str:
+def _read_text_file(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
-def load_pdf(path: Path) -> List[Document]:
+def _load_uploaded_pdf(path: Path) -> List[Document]:
     loader = PyPDFLoader(str(path))
     docs = loader.load()
     for d in docs:
         d.metadata["source"] = path.name
         d.metadata["file_type"] = "pdf"
+        d.metadata["source_scope"] = "upload"
     return docs
 
 
-def load_html(path: Path) -> List[Document]:
-    html = read_text_file(path)
+def _load_uploaded_html(path: Path) -> List[Document]:
+    html = _read_text_file(path)
     soup = BeautifulSoup(html, "html.parser")
-
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
 
@@ -50,13 +57,14 @@ def load_html(path: Path) -> List[Document]:
                 "source": path.name,
                 "file_type": "html",
                 "page": 1,
+                "source_scope": "upload",
             },
         )
     ]
 
 
-def load_txt_or_rtf(path: Path) -> List[Document]:
-    text = read_text_file(path)
+def _load_uploaded_txt_or_rtf(path: Path) -> List[Document]:
+    text = _read_text_file(path)
     return [
         Document(
             page_content=text,
@@ -64,15 +72,15 @@ def load_txt_or_rtf(path: Path) -> List[Document]:
                 "source": path.name,
                 "file_type": path.suffix.lower().lstrip("."),
                 "page": 1,
+                "source_scope": "upload",
             },
         )
     ]
 
 
-def load_csv(path: Path) -> List[Document]:
+def _load_uploaded_csv(path: Path) -> List[Document]:
     df = pd.read_csv(path)
     text = df.to_csv(index=False)
-
     return [
         Document(
             page_content=text,
@@ -81,18 +89,18 @@ def load_csv(path: Path) -> List[Document]:
                 "file_type": "csv",
                 "page": 1,
                 "rows": len(df),
-                "columns": list(df.columns),
+                "columns": ", ".join(map(str, df.columns)),
+                "source_scope": "upload",
             },
         )
     ]
 
 
-def load_json(path: Path) -> List[Document]:
+def _load_uploaded_json(path: Path) -> List[Document]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     text = json.dumps(data, indent=2, ensure_ascii=False)
-
     return [
         Document(
             page_content=text,
@@ -100,15 +108,15 @@ def load_json(path: Path) -> List[Document]:
                 "source": path.name,
                 "file_type": "json",
                 "page": 1,
+                "source_scope": "upload",
             },
         )
     ]
 
 
-def load_docx(path: Path) -> List[Document]:
+def _load_uploaded_docx(path: Path) -> List[Document]:
     doc = DocxDocument(path)
     text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-
     return [
         Document(
             page_content=text,
@@ -116,85 +124,62 @@ def load_docx(path: Path) -> List[Document]:
                 "source": path.name,
                 "file_type": "docx",
                 "page": 1,
+                "source_scope": "upload",
             },
         )
     ]
 
 
-def load_file(path: Path) -> List[Document]:
+def _load_uploaded_file(path: Path) -> List[Document]:
     suffix = path.suffix.lower()
 
     if suffix == ".pdf":
-        return load_pdf(path)
+        return _load_uploaded_pdf(path)
     if suffix in {".html", ".htm"}:
-        return load_html(path)
+        return _load_uploaded_html(path)
     if suffix in {".txt", ".rtf"}:
-        return load_txt_or_rtf(path)
+        return _load_uploaded_txt_or_rtf(path)
     if suffix == ".csv":
-        return load_csv(path)
+        return _load_uploaded_csv(path)
     if suffix == ".json":
-        return load_json(path)
+        return _load_uploaded_json(path)
     if suffix == ".docx":
-        return load_docx(path)
+        return _load_uploaded_docx(path)
 
     return []
 
 
-def load_documents(folder: str) -> List[Document]:
-    docs: List[Document] = []
-    folder_path = Path(folder)
+def build_upload_index(uploaded_files) -> int:
+    if not uploaded_files:
+        return 0
 
-    if not folder_path.exists():
-        raise FileNotFoundError(f"Folder not found: {folder}")
-
-    files = sorted(
-        [p for p in folder_path.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS]
-    )
-
-    if not files:
-        raise FileNotFoundError(f"No supported files found in: {folder}")
-
-    for file_path in files:
-        loaded = load_file(file_path)
-        docs.extend(loaded)
-
-    return docs
-
-
-def chunk_documents(docs: List[Document]) -> List[Document]:
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
-    )
-    return splitter.split_documents(docs)
-
-
-def build_chroma_index(chunks: List[Document]) -> None:
-    os.makedirs(CHROMA_DIR, exist_ok=True)
     embeddings = get_embeddings()
+    os.makedirs(UPLOAD_CHROMA_DIR, exist_ok=True)
+
+    tmp_dir = Path("data/tmp_uploads")
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    if Path(UPLOAD_CHROMA_DIR).exists():
+        shutil.rmtree(UPLOAD_CHROMA_DIR)
+    os.makedirs(UPLOAD_CHROMA_DIR, exist_ok=True)
+
+    docs: List[Document] = []
+    for uploaded_file in uploaded_files:
+        saved_path = _save_uploaded_file(uploaded_file, tmp_dir)
+        docs.extend(_load_uploaded_file(saved_path))
+
+    if not docs:
+        return 0
+
+    chunks = chunk_documents(docs)
 
     Chroma.from_documents(
         documents=chunks,
         embedding=embeddings,
-        persist_directory=CHROMA_DIR,
-        collection_name=COLLECTION_NAME,
+        persist_directory=UPLOAD_CHROMA_DIR,
+        collection_name=UPLOAD_COLLECTION_NAME,
     )
 
-
-def ingest(folder: str = "data/raw_docs") -> Dict[str, Any]:
-    docs = load_documents(folder)
-    chunks = chunk_documents(docs)
-    build_chroma_index(chunks)
-
-    return {
-        "files_loaded": len(set(d.metadata.get("source") for d in docs)),
-        "documents_loaded": len(docs),
-        "chunks_created": len(chunks),
-        "chroma_dir": CHROMA_DIR,
-        "collection": COLLECTION_NAME,
-    }
-
-
-if __name__ == "__main__":
-    stats = ingest()
-    print(stats)
+    return len(chunks)

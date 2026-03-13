@@ -7,6 +7,9 @@ vector database (Chroma), retrieves the most relevant chunks at query
 time, and generates grounded answers with citations.
 
 ------------------------------------------------------------------------
+## Project Goal
+
+This repository is a modular RAG learning lab designed to help users understand and experiment with each stage of a Retrieval-Augmented Generation pipeline.
 
 ## Project Capabilities
 - Multi-format document ingestion
@@ -28,6 +31,43 @@ time, and generates grounded answers with citations.
 - JSON
 - DOCX
 
+### Current Implemented Options
+
+document sources
+
+chunking methods
+
+embedding backends
+
+retrieval types
+
+LLM generators
+
+### Planned / Suggested Extensions
+
+FAISS
+
+Pinecone
+
+rerankers
+
+semantic chunking improvements
+
+evaluation dashboards
+
+LangGraph workflows
+
+### Learning Focus
+
+This repo is designed to teach:
+
+how documents are loaded
+
+how chunking affects retrieval
+
+how embeddings affect similarity search
+
+how retrieval choice affects final answer quality
 
 ------------------------------------------------------------------------
 
