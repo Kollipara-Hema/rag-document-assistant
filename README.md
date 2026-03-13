@@ -57,41 +57,32 @@ Evaluation	Basic evaluation utilities
 
 ## Repository Structure
 
-rag-document-assistant
-
-app/
+||_rag-document-assistant
+||_app/
    app.py
-
-data/
-   raw_docs/
-   chroma_db/
-   chroma_uploads/
-   benchmarks/
-
-examples/
-
-notebooks/
-
-src/
-
-   loaders/
-   chunkers/
-   embeddings/
-   vectordb/
-   retrievers/
-   generators/
-   rerankers/
-   evaluators/
-   utils/
-
-   config.py
-   registry.py
-   pipeline.py
-
-src_legacy/
-
-requirements.txt
-README.md
+||_data/
+   |_raw_docs/
+   |_chroma_db/
+   |_chroma_uploads/
+   |_benchmarks/
+||_examples/
+||_notebooks/
+||_src/
+   |_loaders/
+   |_chunkers/
+   |_embeddings/
+   |_vectordb/
+   |_retrievers/
+   |_generators/
+   |_rerankers/
+   |_evaluators/
+   |_utils/
+   |_config.py
+   |_registry.py
+   |_pipeline.py
+||_src_legacy/
+||_requirements.txt
+||_README.md
 
 ## Installation
 
