@@ -122,7 +122,9 @@ def answer_with_index(
         query=question,
         vector_store=vector_store,
         top_k=top_k,
+        fetch_k=max(top_k * 3, 10),
     )
+
 
     # Format retrieved chunks for the generator.
     context = format_context(retrieved_docs)
