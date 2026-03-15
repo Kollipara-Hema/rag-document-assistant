@@ -93,43 +93,66 @@ def build_index(
 
 def answer_with_index(
     question: str,
+    loader_name: str,
+    chunker_name: str,
     embedder_name: str,
     retriever_name: str,
     generator_name: str,
     top_k: int,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> Dict[str, Any]:
     """
-    Answer a question using an already-built Chroma index.
+    Answer a question using either dense or sparse retrieval.
+
+    Dense retrieval uses the saved Chroma index.
+    Sparse retrieval uses BM25 over chunked documents.
     """
-    if not chroma_index_exists(CHROMA_DB_DIR):
-        raise FileNotFoundError(
-            "No Chroma index found. Please build the index before asking questions."
+    retriever_fn = RETRIEVERS[retriever_name]
+
+    if retriever_name == "Dense":
+        if not chroma_index_exists(CHROMA_DB_DIR):
+            raise FileNotFoundError(
+                "No Chroma index found. Please build the index before asking questions."
+            )
+
+        embedder_fn = EMBEDDERS[embedder_name]
+        embedding_model = embedder_fn()
+
+        vector_store = load_chroma_store(
+            embedding_function=embedding_model,
+            persist_directory=CHROMA_DB_DIR,
         )
 
-    # Recreate the embedding model so the query can be embedded consistently.
-    embedder_fn = EMBEDDERS[embedder_name]
-    embedding_model = embedder_fn()
+        retrieved_docs = retriever_fn(
+            query=question,
+            vector_store=vector_store,
+            top_k=top_k,
+            fetch_k=max(top_k * 3, 10),
+        )
 
-    # Load the existing vector store from disk.
-    vector_store = load_chroma_store(
-        embedding_function=embedding_model,
-        persist_directory=CHROMA_DB_DIR,
-    )
+    elif retriever_name == "Sparse":
+        loader_fn = LOADERS[loader_name]
+        documents = loader_fn()
 
-    # Retrieve relevant chunks from the saved index.
-    retriever_fn = RETRIEVERS[retriever_name]
-    retrieved_docs = retriever_fn(
-        query=question,
-        vector_store=vector_store,
-        top_k=top_k,
-        fetch_k=max(top_k * 3, 10),
-    )
+        chunker_fn = CHUNKERS[chunker_name]
+        chunks = chunker_fn(
+            documents=documents,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
 
+        retrieved_docs = retriever_fn(
+            query=question,
+            documents=chunks,
+            top_k=top_k,
+        )
 
-    # Format retrieved chunks for the generator.
+    else:
+        raise ValueError(f"Unsupported retriever: {retriever_name}")
+
     context = format_context(retrieved_docs)
 
-    # Generate the final answer.
     generator_fn = GENERATORS[generator_name]
     answer = generator_fn(question=question, context=context)
 
@@ -137,6 +160,8 @@ def answer_with_index(
         "answer": answer,
         "retrieved_docs": retrieved_docs,
         "query_summary": {
+            "Loader": loader_name,
+            "Chunker": chunker_name,
             "Embedder": embedder_name,
             "Retriever": retriever_name,
             "Generator": generator_name,

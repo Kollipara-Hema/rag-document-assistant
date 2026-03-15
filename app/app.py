@@ -184,6 +184,8 @@ if st.button("Generate Answer"):
                 retriever_name=retriever_name,
                 generator_name=generator_name,
                 top_k=top_k,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
             )
 
         st.subheader("Answer")
