@@ -1,8 +1,12 @@
 """
 Streamlit interface for the modular RAG learning lab.
 
-This app lets users choose key pipeline components and see both
-the generated answer and the selected RAG pipeline.
+Step 3 introduces a two-stage workflow:
+
+1. Build / refresh the vector index
+2. Ask many questions using the saved index
+
+This makes the app faster and closer to a real RAG system.
 """
 
 import sys
@@ -14,8 +18,10 @@ sys.path.append(str(ROOT_DIR))
 import streamlit as st
 
 from src.config import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, DEFAULT_TOP_K
-from src.pipeline import run_rag_pipeline
+from src.pipeline import build_index, answer_with_index
 from src.registry import LOADERS, CHUNKERS, EMBEDDERS, RETRIEVERS, GENERATORS
+from src.vectordb.chroma_store import chroma_index_exists
+from src.config import CHROMA_DB_DIR
 
 st.set_page_config(page_title="RAG Learning Lab", layout="wide")
 
@@ -24,13 +30,26 @@ st.markdown(
     """
 This app demonstrates a modular Retrieval-Augmented Generation pipeline.
 
-You can choose pipeline components from the sidebar and see how the system
-loads documents, chunks them, embeds them, retrieves relevant context,
-and generates an answer.
+The workflow is now split into two phases:
+
+1. **Build / Refresh Index**  
+2. **Ask Questions from the Existing Index**
+
+This lets users reuse the same indexed document collection for many questions.
 """
 )
 
-# Sidebar controls let the user configure the current RAG pipeline.
+# Initialize session state so the UI remembers whether the index is ready.
+if "index_ready" not in st.session_state:
+    st.session_state["index_ready"] = chroma_index_exists(CHROMA_DB_DIR)
+
+if "index_pipeline_summary" not in st.session_state:
+    st.session_state["index_pipeline_summary"] = {}
+
+if "index_stats" not in st.session_state:
+    st.session_state["index_stats"] = {}
+
+# Sidebar controls
 st.sidebar.header("Pipeline Controls")
 
 loader_name = st.sidebar.selectbox("Document Source", list(LOADERS.keys()))
@@ -39,50 +58,104 @@ embedder_name = st.sidebar.selectbox("Embedding Model", list(EMBEDDERS.keys()))
 retriever_name = st.sidebar.selectbox("Retriever", list(RETRIEVERS.keys()))
 generator_name = st.sidebar.selectbox("LLM Generator", list(GENERATORS.keys()))
 
-top_k = st.sidebar.slider("Top-K Retrieved Chunks", 1, 10, DEFAULT_TOP_K)
 chunk_size = st.sidebar.slider("Chunk Size", 300, 2000, DEFAULT_CHUNK_SIZE, step=100)
 chunk_overlap = st.sidebar.slider("Chunk Overlap", 0, 500, DEFAULT_CHUNK_OVERLAP, step=25)
+top_k = st.sidebar.slider("Top-K Retrieved Chunks", 1, 10, DEFAULT_TOP_K)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Pipeline Preview")
+
+pipeline_flow = f"{loader_name} → {chunker_name} → {embedder_name} → Chroma → {retriever_name} → {generator_name}"
+st.sidebar.info(pipeline_flow)
+
+# Build / refresh index section
+st.header("Step 1: Build / Refresh Index")
+
+st.markdown(
+    """
+Use the selected loader, chunker, and embedder to build the vector index.
+This only needs to be done when the document collection or indexing settings change.
+"""
+)
+
+if st.button("Build / Refresh Index"):
+    with st.spinner("Building document index..."):
+        result = build_index(
+            loader_name=loader_name,
+            chunker_name=chunker_name,
+            embedder_name=embedder_name,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+
+    st.session_state["index_ready"] = True
+    st.session_state["index_pipeline_summary"] = result["pipeline_summary"]
+    st.session_state["index_stats"] = result["stats"]
+
+    st.success("Index built successfully.")
+
+# Show index status
+st.subheader("Index Status")
+
+if st.session_state["index_ready"]:
+    st.success("Index is ready. You can now ask multiple questions without rebuilding.")
+
+    if st.session_state["index_pipeline_summary"]:
+        st.markdown("### Index Pipeline Summary")
+        for key, value in st.session_state["index_pipeline_summary"].items():
+            st.write(f"**{key}:** {value}")
+
+        index_flow = " → ".join(st.session_state["index_pipeline_summary"].values())
+        st.info(f"Index Flow: {index_flow}")
+
+    if st.session_state["index_stats"]:
+        st.markdown("### Index Statistics")
+        for key, value in st.session_state["index_stats"].items():
+            st.write(f"**{key}:** {value}")
+else:
+    st.warning("No index found yet. Build the index before asking questions.")
+
+st.markdown("---")
+
+# Question answering section
+st.header("Step 2: Ask Questions")
 
 question = st.text_input(
     "Ask a question about the indexed documents:",
     value="What is retrieval-augmented generation?",
 )
 
-if st.button("Run Pipeline"):
-    with st.spinner("Running the selected RAG pipeline..."):
-        result = run_rag_pipeline(
-            question=question,
-            loader_name=loader_name,
-            chunker_name=chunker_name,
-            embedder_name=embedder_name,
-            retriever_name=retriever_name,
-            generator_name=generator_name,
-            top_k=top_k,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
+if st.button("Generate Answer"):
+    if not st.session_state["index_ready"]:
+        st.error("Please build the index first.")
+    else:
+        with st.spinner("Retrieving context and generating answer..."):
+            result = answer_with_index(
+                question=question,
+                embedder_name=embedder_name,
+                retriever_name=retriever_name,
+                generator_name=generator_name,
+                top_k=top_k,
+            )
 
-    st.subheader("Answer")
-    st.write(result["answer"])
+        st.subheader("Answer")
+        st.write(result["answer"])
 
-    st.subheader("Pipeline Summary")
+        st.subheader("Query Pipeline Summary")
+        for key, value in result["query_summary"].items():
+            st.write(f"**{key}:** {value}")
 
-    # Text summary of the selected pipeline.
-    for key, value in result["pipeline_summary"].items():
-        st.write(f"**{key}:** {value}")
+        query_flow = f"Existing Chroma Index → {result['query_summary']['Retriever']} → {result['query_summary']['Generator']}"
+        st.info(f"Query Flow: {query_flow}")
 
-    # Visual flow of the selected pipeline.
-    pipeline_flow = " → ".join(result["pipeline_summary"].values())
-    st.info(f"Pipeline Flow: {pipeline_flow}")
+        st.subheader("Query Statistics")
+        for key, value in result["stats"].items():
+            st.write(f"**{key}:** {value}")
 
-    st.subheader("Pipeline Statistics")
-    for key, value in result["stats"].items():
-        st.write(f"**{key}:** {value}")
+        st.subheader("Retrieved Chunks")
+        for index, doc in enumerate(result["retrieved_docs"], start=1):
+            source = doc.metadata.get("source", "unknown")
+            page = doc.metadata.get("page", "NA")
 
-    st.subheader("Retrieved Chunks")
-    for index, doc in enumerate(result["retrieved_docs"], start=1):
-        source = doc.metadata.get("source", "unknown")
-        page = doc.metadata.get("page", "NA")
-
-        with st.expander(f"Chunk {index} | Source: {source} | Page: {page}"):
-            st.write(doc.page_content[:1500])
+            with st.expander(f"Chunk {index} | Source: {source} | Page: {page}"):
+                st.write(doc.page_content[:1500])

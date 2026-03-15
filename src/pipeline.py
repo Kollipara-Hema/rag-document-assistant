@@ -1,8 +1,12 @@
 """
 Main pipeline orchestration for the modular RAG learning lab.
 
-This file connects loading, chunking, embedding, indexing, retrieval,
-and answer generation into one callable workflow.
+Step 3 separates the workflow into two parts:
+
+1. Build / refresh the index
+2. Ask many questions using the existing index
+
+This is closer to how real RAG systems work in practice.
 """
 
 from typing import Dict, Any, List
@@ -13,12 +17,16 @@ from src.config import (
     DEFAULT_CHUNK_SIZE,
 )
 from src.registry import LOADERS, CHUNKERS, EMBEDDERS, RETRIEVERS, GENERATORS
-from src.vectordb.chroma_store import build_chroma_store
+from src.vectordb.chroma_store import (
+    build_chroma_store,
+    load_chroma_store,
+    chroma_index_exists,
+)
 
 
 def format_context(retrieved_docs) -> str:
     """
-    Format retrieved chunks into a context block for the generator.
+    Convert retrieved documents into a single context string for the LLM.
     """
     context_parts = []
 
@@ -32,25 +40,24 @@ def format_context(retrieved_docs) -> str:
     return "\n\n".join(context_parts)
 
 
-def run_rag_pipeline(
-    question: str,
+def build_index(
     loader_name: str,
     chunker_name: str,
     embedder_name: str,
-    retriever_name: str,
-    generator_name: str,
-    top_k: int,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> Dict[str, Any]:
     """
-    Run the full RAG pipeline using selected modular components.
+    Build the document index once and persist it to Chroma.
+
+    This function is intentionally separate from query answering so that
+    repeated user questions do not trigger repeated ingestion and indexing.
     """
-    # Load raw documents from the selected source.
+    # Load the selected document source.
     loader_fn = LOADERS[loader_name]
     documents = loader_fn()
 
-    # Split documents using the selected chunking strategy.
+    # Split the loaded documents into chunks.
     chunker_fn = CHUNKERS[chunker_name]
     chunks = chunker_fn(
         documents=documents,
@@ -62,14 +69,54 @@ def run_rag_pipeline(
     embedder_fn = EMBEDDERS[embedder_name]
     embedding_model = embedder_fn()
 
-    # Build the Chroma store for the current chunk set.
-    vector_store = build_chroma_store(
+    # Build and persist the Chroma vector store.
+    build_chroma_store(
         documents=chunks,
         embedding_function=embedding_model,
         persist_directory=CHROMA_DB_DIR,
     )
 
-    # Retrieve the most relevant chunks for the user question.
+    return {
+        "pipeline_summary": {
+            "Loader": loader_name,
+            "Chunker": chunker_name,
+            "Embedder": embedder_name,
+            "Vector DB": "Chroma",
+        },
+        "stats": {
+            "documents_loaded": len(documents),
+            "chunks_created": len(chunks),
+            "index_path": str(CHROMA_DB_DIR),
+        },
+    }
+
+
+def answer_with_index(
+    question: str,
+    embedder_name: str,
+    retriever_name: str,
+    generator_name: str,
+    top_k: int,
+) -> Dict[str, Any]:
+    """
+    Answer a question using an already-built Chroma index.
+    """
+    if not chroma_index_exists(CHROMA_DB_DIR):
+        raise FileNotFoundError(
+            "No Chroma index found. Please build the index before asking questions."
+        )
+
+    # Recreate the embedding model so the query can be embedded consistently.
+    embedder_fn = EMBEDDERS[embedder_name]
+    embedding_model = embedder_fn()
+
+    # Load the existing vector store from disk.
+    vector_store = load_chroma_store(
+        embedding_function=embedding_model,
+        persist_directory=CHROMA_DB_DIR,
+    )
+
+    # Retrieve relevant chunks from the saved index.
     retriever_fn = RETRIEVERS[retriever_name]
     retrieved_docs = retriever_fn(
         query=question,
@@ -77,28 +124,23 @@ def run_rag_pipeline(
         top_k=top_k,
     )
 
-    # Convert retrieved chunks into a context block for generation.
+    # Format retrieved chunks for the generator.
     context = format_context(retrieved_docs)
 
-    # Generate the final answer using the selected LLM backend.
+    # Generate the final answer.
     generator_fn = GENERATORS[generator_name]
     answer = generator_fn(question=question, context=context)
 
-    # Return both the answer and pipeline metadata for display.
     return {
         "answer": answer,
         "retrieved_docs": retrieved_docs,
-        "pipeline_summary": {
-            "Loader": loader_name,
-            "Chunker": chunker_name,
+        "query_summary": {
             "Embedder": embedder_name,
-            "Vector DB": "Chroma",
             "Retriever": retriever_name,
             "Generator": generator_name,
+            "Top-K": top_k,
         },
         "stats": {
-            "documents_loaded": len(documents),
-            "chunks_created": len(chunks),
             "chunks_retrieved": len(retrieved_docs),
         },
     }
