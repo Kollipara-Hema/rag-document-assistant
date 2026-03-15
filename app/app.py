@@ -180,6 +180,8 @@ if st.button("Generate Answer"):
         with st.spinner("Retrieving context and generating answer..."):
             result = answer_with_index(
                 question=question,
+                loader_name=loader_name,
+                chunker_name=chunker_name,
                 embedder_name=embedder_name,
                 retriever_name=retriever_name,
                 generator_name=generator_name,
