@@ -14,6 +14,8 @@ from src.generators.openai_generator import generate_with_openai
 from src.loaders.local_loader import load_local_documents
 from src.retrievers.dense_retriever import retrieve_dense
 from src.retrievers.sparse_retriever import retrieve_sparse
+from src.retrievers.hybrid_retriever import retrieve_hybrid
+
 
 LOADERS = {
     "Local Repository": load_local_documents,
@@ -32,6 +34,7 @@ EMBEDDERS = {
 RETRIEVERS = {
     "Dense": retrieve_dense,
     "Sparse": retrieve_sparse,
+    "Hybrid": retrieve_hybrid,
 }
 
 GENERATORS = {

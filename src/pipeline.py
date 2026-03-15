@@ -103,14 +103,34 @@ def answer_with_index(
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> Dict[str, Any]:
     """
-    Answer a question using either dense or sparse retrieval.
+    Answer a question using dense, sparse, or hybrid retrieval.
 
     Dense retrieval uses the saved Chroma index.
     Sparse retrieval uses BM25 over chunked documents.
+    Hybrid retrieval combines both.
     """
     retriever_fn = RETRIEVERS[retriever_name]
 
-    if retriever_name == "Dense":
+    # Prepare chunked documents when the retriever needs direct access to text chunks.
+    needs_chunk_documents = retriever_name in {"Sparse", "Hybrid"}
+
+    chunks = None
+    if needs_chunk_documents:
+        loader_fn = LOADERS[loader_name]
+        documents = loader_fn()
+
+        chunker_fn = CHUNKERS[chunker_name]
+        chunks = chunker_fn(
+            documents=documents,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+
+    # Prepare vector store when the retriever uses dense search.
+    needs_vector_store = retriever_name in {"Dense", "Hybrid"}
+
+    vector_store = None
+    if needs_vector_store:
         if not chroma_index_exists(CHROMA_DB_DIR):
             raise FileNotFoundError(
                 "No Chroma index found. Please build the index before asking questions."
@@ -124,6 +144,8 @@ def answer_with_index(
             persist_directory=CHROMA_DB_DIR,
         )
 
+    # Run the selected retrieval strategy.
+    if retriever_name == "Dense":
         retrieved_docs = retriever_fn(
             query=question,
             vector_store=vector_store,
@@ -132,20 +154,20 @@ def answer_with_index(
         )
 
     elif retriever_name == "Sparse":
-        loader_fn = LOADERS[loader_name]
-        documents = loader_fn()
-
-        chunker_fn = CHUNKERS[chunker_name]
-        chunks = chunker_fn(
-            documents=documents,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
-
         retrieved_docs = retriever_fn(
             query=question,
             documents=chunks,
             top_k=top_k,
+        )
+
+    elif retriever_name == "Hybrid":
+        retrieved_docs = retriever_fn(
+            query=question,
+            vector_store=vector_store,
+            documents=chunks,
+            top_k=top_k,
+            dense_fetch_k=max(top_k * 3, 10),
+            sparse_fetch_k=max(top_k * 3, 10),
         )
 
     else:
