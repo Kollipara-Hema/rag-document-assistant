@@ -23,6 +23,30 @@ from src.registry import LOADERS, CHUNKERS, EMBEDDERS, RETRIEVERS, GENERATORS
 from src.vectordb.chroma_store import chroma_index_exists
 from src.config import CHROMA_DB_DIR
 
+
+def build_full_pipeline_flow(
+    loader_name: str,
+    chunker_name: str,
+    embedder_name: str,
+    retriever_name: str,
+    generator_name: str,
+) -> str:
+    """
+    Create a single readable pipeline flow string for display in the UI.
+
+    This helps users understand the full end-to-end RAG path
+    from document source to final answer generation.
+    """
+    return (
+        f"{loader_name} → "
+        f"{chunker_name} → "
+        f"{embedder_name} → "
+        f"Chroma → "
+        f"{retriever_name} → "
+        f"{generator_name}"
+    )
+
+
 st.set_page_config(page_title="RAG Learning Lab", layout="wide")
 
 st.title("RAG Learning Lab")
@@ -63,10 +87,34 @@ chunk_overlap = st.sidebar.slider("Chunk Overlap", 0, 500, DEFAULT_CHUNK_OVERLAP
 top_k = st.sidebar.slider("Top-K Retrieved Chunks", 1, 10, DEFAULT_TOP_K)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Pipeline Preview")
+st.sidebar.subheader("Selected Pipeline")
 
-pipeline_flow = f"{loader_name} → {chunker_name} → {embedder_name} → Chroma → {retriever_name} → {generator_name}"
+pipeline_flow = build_full_pipeline_flow(
+    loader_name=loader_name,
+    chunker_name=chunker_name,
+    embedder_name=embedder_name,
+    retriever_name=retriever_name,
+    generator_name=generator_name,
+)
+
 st.sidebar.info(pipeline_flow)
+
+# Show current full pipeline in main app
+st.subheader("Current Pipeline Structure")
+st.info(pipeline_flow)
+
+st.markdown(
+    """
+**Pipeline Stages**
+
+1. **Document Source** → where the documents come from  
+2. **Chunking** → how documents are split into smaller pieces  
+3. **Embedding Model** → how text is converted into vectors  
+4. **Vector Database** → where embeddings are stored  
+5. **Retriever** → how relevant chunks are selected  
+6. **LLM Generator** → how the final answer is produced
+"""
+)
 
 # Build / refresh index section
 st.header("Step 1: Build / Refresh Index")
@@ -145,8 +193,8 @@ if st.button("Generate Answer"):
         for key, value in result["query_summary"].items():
             st.write(f"**{key}:** {value}")
 
-        query_flow = f"Existing Chroma Index → {result['query_summary']['Retriever']} → {result['query_summary']['Generator']}"
-        st.info(f"Query Flow: {query_flow}")
+        st.subheader("Full Pipeline Used for This Answer")
+        st.info(pipeline_flow)
 
         st.subheader("Query Statistics")
         for key, value in result["stats"].items():
