@@ -18,6 +18,9 @@ from src.loaders.local_loader import load_local_documents
 from src.loaders.upload_loader import load_uploaded_documents
 from src.loaders.web_loader import load_web_documents
 from src.loaders.github_loader import load_github_documents
+from src.chunkers.sliding_window_chunker import chunk_with_sliding_window
+from src.chunkers.semantic_chunker import chunk_with_semantic_style
+
 
 LOADERS = {
     "Local Repository": load_local_documents,
@@ -30,6 +33,8 @@ LOADERS = {
 CHUNKERS = {
     "Fixed": chunk_with_fixed_size,
     "Recursive": chunk_with_recursive_split,
+    "Sliding Window": chunk_with_sliding_window,
+    "Semantic": chunk_with_semantic_style,
 }
 
 EMBEDDERS = {
