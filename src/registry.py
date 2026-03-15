@@ -11,15 +11,21 @@ from src.embeddings.sentence_transformer_embedder import get_local_embedder
 from src.embeddings.openai_embedder import get_openai_embedder
 from src.generators.ollama_generator import generate_with_ollama
 from src.generators.openai_generator import generate_with_openai
-from src.loaders.local_loader import load_local_documents
 from src.retrievers.dense_retriever import retrieve_dense
 from src.retrievers.sparse_retriever import retrieve_sparse
 from src.retrievers.hybrid_retriever import retrieve_hybrid
-
+from src.loaders.local_loader import load_local_documents
+from src.loaders.upload_loader import load_uploaded_documents
+from src.loaders.web_loader import load_web_documents
+from src.loaders.github_loader import load_github_documents
 
 LOADERS = {
     "Local Repository": load_local_documents,
+    "Uploaded Files": load_uploaded_documents,
+    "Web Page": load_web_documents,
+    "GitHub Repository": load_github_documents,
 }
+
 
 CHUNKERS = {
     "Fixed": chunk_with_fixed_size,

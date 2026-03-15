@@ -21,7 +21,7 @@ from src.config import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, DEFAULT_TOP_K
 from src.pipeline import build_index, answer_with_index
 from src.registry import LOADERS, CHUNKERS, EMBEDDERS, RETRIEVERS, GENERATORS
 from src.vectordb.chroma_store import chroma_index_exists
-from src.config import CHROMA_DB_DIR
+from src.pipeline import get_chroma_dir_for_loader
 
 
 def build_full_pipeline_flow(
@@ -64,9 +64,6 @@ This lets users reuse the same indexed document collection for many questions.
 )
 
 # Initialize session state so the UI remembers whether the index is ready.
-if "index_ready" not in st.session_state:
-    st.session_state["index_ready"] = chroma_index_exists(CHROMA_DB_DIR)
-
 if "index_pipeline_summary" not in st.session_state:
     st.session_state["index_pipeline_summary"] = {}
 
@@ -77,6 +74,24 @@ if "index_stats" not in st.session_state:
 st.sidebar.header("Pipeline Controls")
 
 loader_name = st.sidebar.selectbox("Document Source", list(LOADERS.keys()))
+current_chroma_dir = get_chroma_dir_for_loader(loader_name)
+st.session_state["index_ready"] = chroma_index_exists(current_chroma_dir)
+
+source_input = None
+
+if loader_name == "Uploaded Files":
+    source_input = st.sidebar.file_uploader(
+        "Upload documents",
+        accept_multiple_files=True,
+        type=["pdf", "html", "htm", "txt", "csv", "json", "docx", "rtf", "md", "yaml", "yml"],
+    )
+
+elif loader_name == "Web Page":
+    source_input = st.sidebar.text_input("Enter Web Page URL")
+
+elif loader_name == "GitHub Repository":
+    source_input = st.sidebar.text_input("Enter GitHub Repository URL")
+
 chunker_name = st.sidebar.selectbox("Chunking Strategy", list(CHUNKERS.keys()))
 embedder_name = st.sidebar.selectbox("Embedding Model", list(EMBEDDERS.keys()))
 retriever_name = st.sidebar.selectbox("Retriever", list(RETRIEVERS.keys()))
@@ -127,20 +142,29 @@ This only needs to be done when the document collection or indexing settings cha
 )
 
 if st.button("Build / Refresh Index"):
-    with st.spinner("Building document index..."):
-        result = build_index(
-            loader_name=loader_name,
-            chunker_name=chunker_name,
-            embedder_name=embedder_name,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
+    if loader_name == "Uploaded Files" and not source_input:
+        st.error("Please upload at least one file.")
+    elif loader_name == "Web Page" and not source_input:
+        st.error("Please enter a web page URL.")
+    elif loader_name == "GitHub Repository" and not source_input:
+        st.error("Please enter a GitHub repository URL.")
+    else:
+        with st.spinner("Building document index..."):
+            result = build_index(
+                loader_name=loader_name,
+                chunker_name=chunker_name,
+                embedder_name=embedder_name,
+                source_input=source_input,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+            )
 
-    st.session_state["index_ready"] = True
-    st.session_state["index_pipeline_summary"] = result["pipeline_summary"]
-    st.session_state["index_stats"] = result["stats"]
+        st.session_state["index_ready"] = True
+        st.session_state["index_pipeline_summary"] = result["pipeline_summary"]
+        st.session_state["index_stats"] = result["stats"]
 
-    st.success("Index built successfully.")
+        st.success("Index built successfully.")
+
 
 # Show index status
 st.subheader("Index Status")
@@ -186,6 +210,7 @@ if st.button("Generate Answer"):
                 retriever_name=retriever_name,
                 generator_name=generator_name,
                 top_k=top_k,
+                source_input=source_input,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
             )

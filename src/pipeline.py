@@ -1,18 +1,14 @@
 """
 Main pipeline orchestration for the modular RAG learning lab.
-
-Step 3 separates the workflow into two parts:
-
-1. Build / refresh the index
-2. Ask many questions using the existing index
-
-This is closer to how real RAG systems work in practice.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from src.config import (
-    CHROMA_DB_DIR,
+    CHROMA_DB_LOCAL_DIR,
+    CHROMA_DB_UPLOAD_DIR,
+    CHROMA_DB_WEB_DIR,
+    CHROMA_DB_GITHUB_DIR,
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
 )
@@ -24,9 +20,22 @@ from src.vectordb.chroma_store import (
 )
 
 
+def get_chroma_dir_for_loader(loader_name: str):
+    """
+    Return a dedicated Chroma directory for each document source.
+    """
+    mapping = {
+        "Local Repository": CHROMA_DB_LOCAL_DIR,
+        "Uploaded Files": CHROMA_DB_UPLOAD_DIR,
+        "Web Page": CHROMA_DB_WEB_DIR,
+        "GitHub Repository": CHROMA_DB_GITHUB_DIR,
+    }
+    return mapping[loader_name]
+
+
 def format_context(retrieved_docs) -> str:
     """
-    Convert retrieved documents into a single context string for the LLM.
+    Convert retrieved documents into a context string for the LLM.
     """
     context_parts = []
 
@@ -34,7 +43,6 @@ def format_context(retrieved_docs) -> str:
         source = doc.metadata.get("source", "unknown")
         page = doc.metadata.get("page", "NA")
         text = doc.page_content.strip().replace("\n", " ")
-
         context_parts.append(f"[{source}:{page}] {text}")
 
     return "\n\n".join(context_parts)
@@ -44,20 +52,20 @@ def build_index(
     loader_name: str,
     chunker_name: str,
     embedder_name: str,
+    source_input=None,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> Dict[str, Any]:
     """
     Build the document index once and persist it to Chroma.
-
-    This function is intentionally separate from query answering so that
-    repeated user questions do not trigger repeated ingestion and indexing.
     """
-    # Load the selected document source.
     loader_fn = LOADERS[loader_name]
-    documents = loader_fn()
 
-    # Split the loaded documents into chunks.
+    if loader_name == "Local Repository":
+        documents = loader_fn()
+    else:
+        documents = loader_fn(source_input)
+
     chunker_fn = CHUNKERS[chunker_name]
     chunks = chunker_fn(
         documents=documents,
@@ -65,15 +73,15 @@ def build_index(
         chunk_overlap=chunk_overlap,
     )
 
-    # Create the selected embedding model.
     embedder_fn = EMBEDDERS[embedder_name]
     embedding_model = embedder_fn()
 
-    # Build and persist the Chroma vector store.
+    target_chroma_dir = get_chroma_dir_for_loader(loader_name)
+
     build_chroma_store(
         documents=chunks,
         embedding_function=embedding_model,
-        persist_directory=CHROMA_DB_DIR,
+        persist_directory=target_chroma_dir,
     )
 
     return {
@@ -86,7 +94,7 @@ def build_index(
         "stats": {
             "documents_loaded": len(documents),
             "chunks_created": len(chunks),
-            "index_path": str(CHROMA_DB_DIR),
+            "index_path": str(target_chroma_dir),
         },
     }
 
@@ -99,25 +107,25 @@ def answer_with_index(
     retriever_name: str,
     generator_name: str,
     top_k: int,
+    source_input=None,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> Dict[str, Any]:
     """
     Answer a question using dense, sparse, or hybrid retrieval.
-
-    Dense retrieval uses the saved Chroma index.
-    Sparse retrieval uses BM25 over chunked documents.
-    Hybrid retrieval combines both.
     """
     retriever_fn = RETRIEVERS[retriever_name]
+    target_chroma_dir = get_chroma_dir_for_loader(loader_name)
 
-    # Prepare chunked documents when the retriever needs direct access to text chunks.
     needs_chunk_documents = retriever_name in {"Sparse", "Hybrid"}
 
     chunks = None
     if needs_chunk_documents:
         loader_fn = LOADERS[loader_name]
-        documents = loader_fn()
+        if loader_name == "Local Repository":
+            documents = loader_fn()
+        else:
+            documents = loader_fn(source_input)
 
         chunker_fn = CHUNKERS[chunker_name]
         chunks = chunker_fn(
@@ -126,14 +134,13 @@ def answer_with_index(
             chunk_overlap=chunk_overlap,
         )
 
-    # Prepare vector store when the retriever uses dense search.
     needs_vector_store = retriever_name in {"Dense", "Hybrid"}
 
     vector_store = None
     if needs_vector_store:
-        if not chroma_index_exists(CHROMA_DB_DIR):
+        if not chroma_index_exists(target_chroma_dir):
             raise FileNotFoundError(
-                "No Chroma index found. Please build the index before asking questions."
+                "No Chroma index found for the selected source. Please build the index first."
             )
 
         embedder_fn = EMBEDDERS[embedder_name]
@@ -141,10 +148,9 @@ def answer_with_index(
 
         vector_store = load_chroma_store(
             embedding_function=embedding_model,
-            persist_directory=CHROMA_DB_DIR,
+            persist_directory=target_chroma_dir,
         )
 
-    # Run the selected retrieval strategy.
     if retriever_name == "Dense":
         retrieved_docs = retriever_fn(
             query=question,
