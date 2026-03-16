@@ -4,8 +4,7 @@ Hybrid retrieval combines dense and sparse retrieval.
 Dense retrieval is good for semantic meaning.
 Sparse retrieval is good for exact keywords and technical terms.
 
-We combine both using Reciprocal Rank Fusion (RRF), which is a simple
-and effective way to merge ranked results from different retrievers.
+We combine both using Reciprocal Rank Fusion (RRF).
 """
 
 from typing import List, Dict, Tuple
@@ -18,9 +17,6 @@ from src.retrievers.sparse_retriever import retrieve_sparse
 def _make_doc_key(doc: Document) -> Tuple[str, str, str]:
     """
     Create a lightweight identity key for merging results.
-
-    We use source, page, and a prefix of the content so that chunks from
-    different retrievers can be recognized as the same document chunk.
     """
     source = str(doc.metadata.get("source", "unknown"))
     page = str(doc.metadata.get("page", "NA"))
@@ -41,28 +37,6 @@ def retrieve_hybrid(
     """
     Retrieve documents using both dense and sparse retrieval, then merge them
     using Reciprocal Rank Fusion (RRF).
-
-    Parameters
-    ----------
-    query : str
-        User question.
-    vector_store
-        Loaded Chroma vector store for dense retrieval.
-    documents : List[Document]
-        Chunked documents used by sparse retrieval.
-    top_k : int
-        Final number of results to return.
-    dense_fetch_k : int | None
-        Number of dense candidates to fetch before fusion.
-    sparse_fetch_k : int | None
-        Number of sparse candidates to fetch before fusion.
-    rrf_k : int
-        Fusion constant used in RRF.
-
-    Returns
-    -------
-    List[Document]
-        Top-k fused results.
     """
     dense_docs = retrieve_dense(
         query=query,
@@ -80,13 +54,11 @@ def retrieve_hybrid(
     fused_scores: Dict[Tuple[str, str, str], float] = {}
     doc_lookup: Dict[Tuple[str, str, str], Document] = {}
 
-    # Add dense ranking contribution
     for rank, doc in enumerate(dense_docs, start=1):
         key = _make_doc_key(doc)
         fused_scores[key] = fused_scores.get(key, 0.0) + 1.0 / (rrf_k + rank)
         doc_lookup[key] = doc
 
-    # Add sparse ranking contribution
     for rank, doc in enumerate(sparse_docs, start=1):
         key = _make_doc_key(doc)
         fused_scores[key] = fused_scores.get(key, 0.0) + 1.0 / (rrf_k + rank)
@@ -98,4 +70,11 @@ def retrieve_hybrid(
         reverse=True,
     )[:top_k]
 
-    return [doc_lookup[key] for key in ranked_keys]
+    retrieved_docs = []
+    for key in ranked_keys:
+        doc = doc_lookup[key]
+        doc.metadata["retrieval_score"] = float(fused_scores[key])
+        doc.metadata["retrieval_method"] = "hybrid"
+        retrieved_docs.append(doc)
+
+    return retrieved_docs

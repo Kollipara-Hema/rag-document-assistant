@@ -210,6 +210,12 @@ def answer_with_index(
     generator_fn = GENERATORS[generator_name]
     answer = generator_fn(question=question, context=context)
 
+    score_values = [
+        float(doc.metadata.get("retrieval_score", 0.0))
+        for doc in retrieved_docs
+        if doc.metadata.get("retrieval_score") is not None
+    ]
+
     return {
         "answer": answer,
         "retrieved_docs": retrieved_docs,
@@ -223,5 +229,8 @@ def answer_with_index(
         },
         "stats": {
             "chunks_retrieved": len(retrieved_docs),
+            "max_retrieval_score": max(score_values) if score_values else None,
+            "min_retrieval_score": min(score_values) if score_values else None,
         },
     }
+

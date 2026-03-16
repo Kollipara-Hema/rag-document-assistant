@@ -2,8 +2,6 @@
 Sparse retrieval using BM25.
 
 This retriever scores chunks using keyword overlap rather than embeddings.
-It is useful for questions involving exact phrases, technical terms, policy
-language, identifiers, and numbers.
 """
 
 from typing import List
@@ -16,9 +14,6 @@ from rank_bm25 import BM25Okapi
 def _tokenize(text: str) -> List[str]:
     """
     Simple tokenizer for BM25.
-
-    We lowercase the text and split it into alphanumeric tokens.
-    This keeps the implementation easy to understand for learning purposes.
     """
     return re.findall(r"\b\w+\b", text.lower())
 
@@ -29,21 +24,7 @@ def retrieve_sparse(
     top_k: int,
 ) -> List[Document]:
     """
-    Retrieve the top-k chunks using BM25 sparse retrieval.
-
-    Parameters
-    ----------
-    query : str
-        User question.
-    documents : List[Document]
-        Chunked documents to search over.
-    top_k : int
-        Number of top chunks to return.
-
-    Returns
-    -------
-    List[Document]
-        Top-k documents ranked by BM25 score.
+    Retrieve the top-k chunks using BM25 sparse retrieval and attach BM25 scores.
     """
     if not documents:
         return []
@@ -60,4 +41,11 @@ def retrieve_sparse(
         reverse=True,
     )[:top_k]
 
-    return [documents[i] for i in ranked_indices]
+    retrieved_docs = []
+    for rank_index in ranked_indices:
+        doc = documents[rank_index]
+        doc.metadata["retrieval_score"] = float(scores[rank_index])
+        doc.metadata["retrieval_method"] = "sparse"
+        retrieved_docs.append(doc)
+
+    return retrieved_docs

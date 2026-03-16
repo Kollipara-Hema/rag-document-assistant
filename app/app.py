@@ -239,17 +239,23 @@ if st.button("Generate Answer"):
         for key, value in result["stats"].items():
             st.write(f"**{key}:** {value}")
 
-       
+        st.caption(
+            "Retrieval scores come from the selected retriever. Dense uses vector similarity, "
+            "Sparse uses BM25 scoring, and Hybrid uses fused ranking scores."
+        )
+
         st.subheader("Retrieved Chunks")
 
         st.markdown(
             """
-            These are the chunks selected by the retriever and passed to the language model.
-            Use this section to understand:
-            - which document the system relied on
-            - which page or source it came from
-            - how chunking affected the retrieved context
-            """
+These are the chunks selected by the retriever and passed to the language model.
+
+Use this section to understand:
+- which document the system relied on
+- which page or source it came from
+- how chunking affected the retrieved context
+- how strongly each chunk matched the query
+"""
         )
 
         for rank, doc in enumerate(result["retrieved_docs"], start=1):
@@ -259,15 +265,23 @@ if st.button("Generate Answer"):
             chunk_length = doc.metadata.get("chunk_length", len(doc.page_content))
             source_scope = doc.metadata.get("source_scope", "unknown")
             file_type = doc.metadata.get("file_type", "unknown")
+            retrieval_score = doc.metadata.get("retrieval_score", None)
+            retrieval_method = doc.metadata.get("retrieval_method", "unknown")
+
+            score_display = f"{retrieval_score:.4f}" if isinstance(retrieval_score, (int, float)) else "NA"
 
             expander_title = (
                 f"Rank {rank} | Source: {source} | Page: {page} | "
-                f"Chunk ID: {chunk_id} | Length: {chunk_length}"
+                f"Chunk ID: {chunk_id} | Length: {chunk_length} | "
+                f"Score: {score_display}"
             )
 
             with st.expander(expander_title):
                 st.write(f"**Source Scope:** {source_scope}")
                 st.write(f"**File Type:** {file_type}")
                 st.write(f"**Chunk Length:** {chunk_length}")
+                st.write(f"**Retrieval Method:** {retrieval_method}")
+                st.write(f"**Retrieval Score:** {score_display}")
                 st.write(doc.page_content[:2000])
+
 
