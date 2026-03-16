@@ -17,20 +17,6 @@ def chunk_with_fixed_size(
 ) -> List[Document]:
     """
     Split documents into fixed-size character chunks.
-
-    Parameters
-    ----------
-    documents : List[Document]
-        Input documents to split.
-    chunk_size : int
-        Maximum size of each chunk.
-    chunk_overlap : int
-        Number of overlapping characters between chunks.
-
-    Returns
-    -------
-    List[Document]
-        Chunked documents.
     """
     splitter = CharacterTextSplitter(
         chunk_size=chunk_size,
@@ -38,4 +24,14 @@ def chunk_with_fixed_size(
         separator="\n",
     )
 
-    return splitter.split_documents(documents)
+    chunks = splitter.split_documents(documents)
+
+    # Add chunk metadata so retrieval results are easier to inspect in the UI.
+    for chunk_index, chunk in enumerate(chunks, start=1):
+        if chunk.metadata is None:
+            chunk.metadata = {}
+
+        chunk.metadata["chunk_id"] = chunk_index
+        chunk.metadata["chunk_length"] = len(chunk.page_content)
+
+    return chunks

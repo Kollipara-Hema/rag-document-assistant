@@ -3,6 +3,8 @@ Main pipeline orchestration for the modular RAG learning lab.
 """
 
 from typing import Dict, Any
+from uuid import uuid4
+from pathlib import Path
 
 from src.config import (
     CHROMA_DB_LOCAL_DIR,
@@ -20,17 +22,35 @@ from src.vectordb.chroma_store import (
 )
 
 
-def get_chroma_dir_for_loader(loader_name: str):
+from pathlib import Path
+
+def get_chroma_dir_for_loader(loader_name: str) -> Path:
     """
-    Return a dedicated Chroma directory for each document source.
+    Return the base Chroma directory for each document source.
+    This directory will contain multiple build subfolders.
     """
+
     mapping = {
-        "Local Repository": CHROMA_DB_LOCAL_DIR,
-        "Uploaded Files": CHROMA_DB_UPLOAD_DIR,
-        "Web Page": CHROMA_DB_WEB_DIR,
-        "GitHub Repository": CHROMA_DB_GITHUB_DIR,
+        "Local Repository": Path(CHROMA_DB_LOCAL_DIR),
+        "Uploaded Files": Path(CHROMA_DB_UPLOAD_DIR),
+        "Web Page": Path(CHROMA_DB_WEB_DIR),
+        "GitHub Repository": Path(CHROMA_DB_GITHUB_DIR),
     }
+
     return mapping[loader_name]
+
+
+def create_fresh_chroma_dir(loader_name: str) -> Path:
+    """
+    Create a unique Chroma directory for each build.
+
+    This avoids file locking / readonly issues when rebuilding indexes
+    inside a running Streamlit process.
+    """
+    base_dir = get_chroma_dir_for_loader(loader_name)
+    build_id = uuid4().hex[:8]
+    fresh_dir = base_dir / f"build_{build_id}"
+    return fresh_dir
 
 
 def format_context(retrieved_docs) -> str:
@@ -76,7 +96,7 @@ def build_index(
     embedder_fn = EMBEDDERS[embedder_name]
     embedding_model = embedder_fn()
 
-    target_chroma_dir = get_chroma_dir_for_loader(loader_name)
+    target_chroma_dir = create_fresh_chroma_dir(loader_name)
 
     build_chroma_store(
         documents=chunks,
@@ -107,6 +127,7 @@ def answer_with_index(
     retriever_name: str,
     generator_name: str,
     top_k: int,
+    index_path: str | None = None,
     source_input=None,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
@@ -115,7 +136,12 @@ def answer_with_index(
     Answer a question using dense, sparse, or hybrid retrieval.
     """
     retriever_fn = RETRIEVERS[retriever_name]
-    target_chroma_dir = get_chroma_dir_for_loader(loader_name)
+    if not index_path:
+        raise FileNotFoundError(
+        "No active index path found. Please build the index first."
+        )
+    target_chroma_dir = Path(index_path)
+
 
     needs_chunk_documents = retriever_name in {"Sparse", "Hybrid"}
 

@@ -70,12 +70,17 @@ if "index_pipeline_summary" not in st.session_state:
 if "index_stats" not in st.session_state:
     st.session_state["index_stats"] = {}
 
+if "active_index_path" not in st.session_state:
+    st.session_state["active_index_path"] = None
+
+
 # Sidebar controls
 st.sidebar.header("Pipeline Controls")
 
 loader_name = st.sidebar.selectbox("Document Source", list(LOADERS.keys()))
-current_chroma_dir = get_chroma_dir_for_loader(loader_name)
-st.session_state["index_ready"] = chroma_index_exists(current_chroma_dir)
+active_index_path = st.session_state.get("active_index_path")
+st.session_state["index_ready"] = bool(active_index_path) and chroma_index_exists(Path(active_index_path))
+
 
 source_input = None
 
@@ -162,6 +167,8 @@ if st.button("Build / Refresh Index"):
         st.session_state["index_ready"] = True
         st.session_state["index_pipeline_summary"] = result["pipeline_summary"]
         st.session_state["index_stats"] = result["stats"]
+        st.session_state["active_index_path"] = result["stats"]["index_path"]
+
 
         st.success("Index built successfully.")
 
@@ -184,6 +191,8 @@ if st.session_state["index_ready"]:
         st.markdown("### Index Statistics")
         for key, value in st.session_state["index_stats"].items():
             st.write(f"**{key}:** {value}")
+    st.caption("Chunk counts and retrieved chunk structure may vary depending on the selected chunking strategy."
+    )
 else:
     st.warning("No index found yet. Build the index before asking questions.")
 
@@ -210,6 +219,7 @@ if st.button("Generate Answer"):
                 retriever_name=retriever_name,
                 generator_name=generator_name,
                 top_k=top_k,
+                index_path=st.session_state.get("active_index_path"),
                 source_input=source_input,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
@@ -229,10 +239,35 @@ if st.button("Generate Answer"):
         for key, value in result["stats"].items():
             st.write(f"**{key}:** {value}")
 
+       
         st.subheader("Retrieved Chunks")
-        for index, doc in enumerate(result["retrieved_docs"], start=1):
+
+        st.markdown(
+            """
+            These are the chunks selected by the retriever and passed to the language model.
+            Use this section to understand:
+            - which document the system relied on
+            - which page or source it came from
+            - how chunking affected the retrieved context
+            """
+        )
+
+        for rank, doc in enumerate(result["retrieved_docs"], start=1):
             source = doc.metadata.get("source", "unknown")
             page = doc.metadata.get("page", "NA")
+            chunk_id = doc.metadata.get("chunk_id", "NA")
+            chunk_length = doc.metadata.get("chunk_length", len(doc.page_content))
+            source_scope = doc.metadata.get("source_scope", "unknown")
+            file_type = doc.metadata.get("file_type", "unknown")
 
-            with st.expander(f"Chunk {index} | Source: {source} | Page: {page}"):
-                st.write(doc.page_content[:1500])
+            expander_title = (
+                f"Rank {rank} | Source: {source} | Page: {page} | "
+                f"Chunk ID: {chunk_id} | Length: {chunk_length}"
+            )
+
+            with st.expander(expander_title):
+                st.write(f"**Source Scope:** {source_scope}")
+                st.write(f"**File Type:** {file_type}")
+                st.write(f"**Chunk Length:** {chunk_length}")
+                st.write(doc.page_content[:2000])
+

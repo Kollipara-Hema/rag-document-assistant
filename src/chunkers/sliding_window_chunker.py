@@ -3,8 +3,6 @@ Sliding window chunking strategy.
 
 This approach creates overlapping text windows so that information near
 chunk boundaries is less likely to be lost during retrieval.
-
-It is useful when context continuity matters.
 """
 
 from typing import List
@@ -19,20 +17,6 @@ def chunk_with_sliding_window(
 ) -> List[Document]:
     """
     Split documents using a sliding window strategy.
-
-    Parameters
-    ----------
-    documents : List[Document]
-        Input documents to split.
-    chunk_size : int
-        Maximum size of each chunk.
-    chunk_overlap : int
-        Number of overlapping characters between chunks.
-
-    Returns
-    -------
-    List[Document]
-        Chunked documents.
     """
     splitter = CharacterTextSplitter(
         separator=" ",
@@ -40,4 +24,13 @@ def chunk_with_sliding_window(
         chunk_overlap=chunk_overlap,
     )
 
-    return splitter.split_documents(documents)
+    chunks = splitter.split_documents(documents)
+
+    for chunk_index, chunk in enumerate(chunks, start=1):
+        if chunk.metadata is None:
+            chunk.metadata = {}
+
+        chunk.metadata["chunk_id"] = chunk_index
+        chunk.metadata["chunk_length"] = len(chunk.page_content)
+
+    return chunks

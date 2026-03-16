@@ -2,11 +2,6 @@
 Semantic-style chunking strategy.
 
 This is a lightweight semantic approximation for educational use.
-Instead of purely splitting by raw character count, it tries to preserve
-natural paragraph boundaries first, then falls back to smaller splits if needed.
-
-This helps learners see how structure-aware chunking differs from purely
-mechanical fixed-length splitting.
 """
 
 from typing import List
@@ -21,31 +16,26 @@ def chunk_with_semantic_style(
 ) -> List[Document]:
     """
     Split documents using structure-aware semantic-style chunking.
-
-    Parameters
-    ----------
-    documents : List[Document]
-        Input documents to split.
-    chunk_size : int
-        Maximum size of each chunk.
-    chunk_overlap : int
-        Number of overlapping characters between chunks.
-
-    Returns
-    -------
-    List[Document]
-        Chunked documents.
     """
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         separators=[
-            "\n\n",   # paragraph boundary
-            "\n",     # line boundary
-            ". ",     # sentence-like split
-            " ",      # word boundary
-            "",       # final fallback
+            "\n\n",
+            "\n",
+            ". ",
+            " ",
+            "",
         ],
     )
 
-    return splitter.split_documents(documents)
+    chunks = splitter.split_documents(documents)
+
+    for chunk_index, chunk in enumerate(chunks, start=1):
+        if chunk.metadata is None:
+            chunk.metadata = {}
+
+        chunk.metadata["chunk_id"] = chunk_index
+        chunk.metadata["chunk_length"] = len(chunk.page_content)
+
+    return chunks
